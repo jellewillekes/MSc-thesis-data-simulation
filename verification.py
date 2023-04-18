@@ -1,62 +1,49 @@
 import pandas as pd
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler, OrdinalEncoder
-from sklearn.decomposition import PCA
-from sklearn.feature_selection import VarianceThreshold
-from scipy.stats import pearsonr
-from statsmodels.stats.outliers_influence import variance_inflation_factor
+from scipy import stats
 
-df = pd.read_csv('synthetic_dataset.csv')
+dataset = pd.read_csv('synthetic_dataset.csv')
 
-# Assuming 'df' is your dataset with both numerical and categorical features
-numerical_df = df.select_dtypes(include=['float64', 'int64'])
+# Assuming 'dataset' is a pandas DataFrame with columns 'Y' and features
+target_col = 'Y'
+significance_level = 0.05
 
-# Heterogeneity: Check the distribution of the target variable
-sns.histplot(df['Y'], kde=True)
-plt.title('Distribution of Target Variable Y')
-plt.show()
+# Separate numerical and categorical columns
+numerical_cols = dataset.select_dtypes(include=np.number).columns.tolist()
+categorical_cols = dataset.select_dtypes(include='object').columns.tolist()
 
-df_trans = df.copy()
-# Convert categorical features to numerical values using ordinal encoding
-ordinal_encoder = OrdinalEncoder()
-category_columns = [f'F{i + 25}' for i in range(1, 26)]
-df_trans[category_columns] = ordinal_encoder.fit_transform(df_trans[category_columns])
+# Remove target column 'Y' from numerical columns
+numerical_cols.remove(target_col)
 
-# Balanced Classes: Check the distribution of each categorical variable
+# Perform ANOVA for numerical features
+print("Numerical features with no heterogeneity:")
+for feature in numerical_cols:
+    # Discretize the continuous feature (you can choose the number of bins based on your domain knowledge)
+    binned_feature = pd.cut(dataset[feature], bins=3, labels=['low', 'medium', 'high'])
 
-# Low Multicollinearity: Check the correlation between numerical features
-corr_matrix = numerical_df.corr()
-mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
-sns.heatmap(corr_matrix, fmt='.2f', mask=mask, cmap='coolwarm', center=0)
-plt.title('Correlation Matrix of Numerical Features')
-plt.show()
+    # Group the target variable 'Y' by the binned feature levels
+    groups = dataset.groupby(binned_feature)[target_col].apply(list)
 
-# Another way to check multicollinearity is to calculate the Variance Inflation Factor (VIF)
-vif = pd.DataFrame()
-vif["Feature"] = numerical_df.columns
-vif["VIF"] = [variance_inflation_factor(numerical_df.values, i) for i in range(numerical_df.shape[1])]
-print("Variance Inflation Factors (VIF):")
-print(vif)
+    # Perform one-way ANOVA test
+    f_stat, p_value = stats.f_oneway(*groups)
 
-# Minimal Missing Data: Check the percentage of missing data in each column
-missing_data = df.isnull().mean() * 100
-print("Percentage of Missing Data per Column:")
-print(missing_data)
+    if p_value >= significance_level:
+        print(f"{feature}: F-statistic = {f_stat}, p-value = {p_value}")
 
-# Absence of Endogeneity: PCA can be used to verify if there is a hidden structure in the data
-scaler = StandardScaler()
-scaled_numerical_df = scaler.fit_transform(numerical_df)
-pca = PCA(n_components=2)
-principal_components = pca.fit_transform(scaled_numerical_df)
-principal_df = pd.DataFrame(data=principal_components, columns=['PC1', 'PC2'])
-sns.scatterplot(data=principal_df, x='PC1', y='PC2')
-plt.title('PCA Scatterplot')
-plt.show()
+# Perform Chi-square test for categorical features
+print("\nCategorical features with no heterogeneity:")
+for feature in categorical_cols:
+    # Create a contingency table for the categorical feature and target variable 'Y'
+    contingency_table = pd.crosstab(dataset[feature], dataset[target_col])
 
-# Randomness: Visualize the distribution of each numerical feature
-for col in numerical_df.columns:
-    sns.histplot(numerical_df[col], kde=True)
-    plt.title(f'Distribution of {col}')
-    plt.show()
+    # Perform Chi-square test of independence
+    chi2_stat, p_value, dof, expected = stats.chi2_contingency(contingency_table)
+
+    if p_value >= significance_level:
+        print(f"{feature}: Chi2-statistic = {chi2_stat}, p-value = {p_value}")
+
+
+
+
+
+
