@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from scipy import stats
+import matplotlib.pyplot as plt
 
 dataset = pd.read_csv('synthetic_dataset.csv')
 
@@ -12,38 +12,48 @@ significance_level = 0.05
 numerical_cols = dataset.select_dtypes(include=np.number).columns.tolist()
 categorical_cols = dataset.select_dtypes(include='object').columns.tolist()
 
-# Remove target column 'Y' from numerical columns
-numerical_cols.remove(target_col)
+# Remove the target column from numerical columns
+if target_col in numerical_cols:
+    numerical_cols.remove(target_col)
 
-# Perform ANOVA for numerical features
-print("Numerical features with no heterogeneity:")
-for feature in numerical_cols:
-    # Discretize the continuous feature (you can choose the number of bins based on your domain knowledge)
-    binned_feature = pd.cut(dataset[feature], bins=3, labels=['low', 'medium', 'high'])
+# Group the numerical columns by 2
+grouped_cols = [numerical_cols[i:i + 2] for i in range(0, len(numerical_cols), 2)]
 
-    # Group the target variable 'Y' by the binned feature levels
-    groups = dataset.groupby(binned_feature)[target_col].apply(list)
+# Determine the number of rows and columns for the subplots
+nrows = (len(grouped_cols) + 1) // 3 + ((len(grouped_cols) + 1) % 3 > 0)
+ncols = 3
 
-    # Perform one-way ANOVA test
-    f_stat, p_value = stats.f_oneway(*groups)
+# Create the subplots
+fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, nrows * 4), sharey=False)
+axes = axes.ravel()
 
-    if p_value >= significance_level:
-        print(f"{feature}: F-statistic = {f_stat}, p-value = {p_value}")
+for i, group in enumerate(grouped_cols):
+    ax = axes[i]
+    for j, col in enumerate(group):
+        dataset[col].value_counts(normalize=True).sort_index().plot(ax=ax, label=col)
 
-# Perform Chi-square test for categorical features
-print("\nCategorical features with no heterogeneity:")
-for feature in categorical_cols:
-    # Create a contingency table for the categorical feature and target variable 'Y'
-    contingency_table = pd.crosstab(dataset[feature], dataset[target_col])
+    # Set the y-axis range based on the columns
+    min_value = min(dataset[group].min())
+    max_value = max(dataset[group].max())
+    ax.set_ylim(min_value, max_value)
 
-    # Perform Chi-square test of independence
-    chi2_stat, p_value, dof, expected = stats.chi2_contingency(contingency_table)
+    ax.set_title(f'Histogram of Columns Group {i + 1}')
+    ax.set_xlabel('Frequency')
+    ax.set_ylabel('Value')
+    ax.legend()
 
-    if p_value >= significance_level:
-        print(f"{feature}: Chi2-statistic = {chi2_stat}, p-value = {p_value}")
+# Plot the target variable in the last subplot
+ax = axes[-1]
+dataset[target_col].value_counts(normalize=True).sort_index().plot(ax=ax, label=target_col)
+ax.set_title('Histogram of Target Variable')
+ax.set_xlabel('Frequency')
+ax.set_ylabel('Value')
+ax.legend()
 
+# Remove empty subplots if there's an odd number of groups
+if (len(grouped_cols) + 1) % ncols != 0:
+    for i in range((len(grouped_cols) + 1) % ncols, ncols):
+        fig.delaxes(axes[-i])
 
-
-
-
-
+plt.tight_layout()
+plt.show()
