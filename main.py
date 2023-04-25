@@ -5,7 +5,7 @@ from scipy.stats import uniform, norm, expon, lognorm, weibull_min, bernoulli, b
 from sklearn.preprocessing import MinMaxScaler, OrdinalEncoder
 
 np.random.seed(99)  # For reproducibility
-n_samples = 100000
+n_samples = 1000000
 n_cat = 20
 n_num = 20
 
@@ -171,6 +171,6 @@ dataset['Y'] = df['Y']
 dataset = scale_and_randomize(dataset)
 df_counts = create_bins(dataset, 100)
 print(df_counts)
-plot_histogram(dataset, 50)
+plot_histogram(dataset, 10)
 
 dataset.to_csv('synthetic_dataset.csv', index=False)
