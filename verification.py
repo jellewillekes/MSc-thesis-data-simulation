@@ -6,7 +6,7 @@ import seaborn as sns
 import scipy.stats as stats
 
 # Load dataset
-dataset = pd.read_csv('synthetic_dataset.csv')
+dataset = pd.read_csv('train_data.csv')
 
 # Define constants
 TARGET_COL = 'Y'
@@ -60,7 +60,7 @@ def calculate_bin_width(data):
 
 def plot_target_distribution(ax):
     """Plot the distribution of the target variable."""
-    sns.histplot(dataset, bins=1000, x=TARGET_COL, color="purple", alpha=0.5, ax=ax, kde=False, label=TARGET_COL)
+    sns.histplot(dataset, bins=100, x=TARGET_COL, color="purple", alpha=0.5, ax=ax, kde=False, label=TARGET_COL)
     ax.set_title(f'Distribution of {TARGET_COL}')
     ax.legend()
     ax.set_xlim(dataset[TARGET_COL].min(), 80)
