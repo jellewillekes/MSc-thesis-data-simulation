@@ -1,145 +1,105 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import uniform, norm, expon, lognorm, weibull_min, bernoulli, binom, geom, poisson, dlaplace
-from sklearn.preprocessing import MinMaxScaler, OrdinalEncoder
+from scipy.stats import iqr, uniform, norm, expon, bernoulli, binom, geom, poisson, lognorm, nbinom, weibull_min
+from sklearn.preprocessing import MinMaxScaler
 
 np.random.seed(99)  # For reproducibility
-n_samples = 1000000
-n_cat = 20
-n_num = 20
+n_samples = 100000
+n_cat = 5
+n_num = 5
+
+distribution_dict = {
+    'num_1': (norm, {}),
+    'num_2': (expon, {'scale': 1}),
+    'num_3': (lognorm, {'s': 1}),
+    'num_4': (uniform, {'loc': 0, 'scale': 100}),
+    'num_5': (weibull_min, {'c': 2}),
+    'cat_1': (bernoulli, {'p': 0.5}),
+    'cat_2': (binom, {'n': 5, 'p': 0.5}),
+    'cat_3': (geom, {'p': 0.5}),
+    'cat_4': (poisson, {'mu': 5}),
+    'cat_5': (nbinom, {'n': 5, 'p': 0.8})
+}
 
 
-def generate_continuous_data(n_samples):
-    normal_data = norm.rvs(loc=0, scale=1, size=(n_samples, 4))
-    exponential_data = expon.rvs(scale=1, size=(n_samples, 4))
-    lognormal_data = lognorm.rvs(s=1, size=(n_samples, 4))
-    uniform_data = uniform.rvs(loc=0, scale=10, size=(n_samples, 4))
-    weibull_data = weibull_min.rvs(c=2, scale=1, size=(n_samples, 4))
-    return np.hstack([normal_data, exponential_data, lognormal_data, uniform_data, weibull_data])
+def generate_continuous_data(n_samples, n_num):
+    constants = [10, 0, 10, 0, 5]
+    data = [dist.rvs(size=n_samples, **params) + constants[i] for i in range(n_num) for dist, params in
+            [distribution_dict[f'num_{i + 1}']]]
+    return np.column_stack(data)
 
 
-def generate_categorical_data(n_samples):
-    discrete_distributions = [
-        bernoulli.rvs(p=0.5, size=(n_samples, 4)),
-        binom.rvs(n=10, p=0.5, size=(n_samples, 4)),
-        geom.rvs(p=0.5, size=(n_samples, 4)),
-        poisson.rvs(mu=3, size=(n_samples, 4)),
-        dlaplace.rvs(loc=0, a=1, size=(n_samples, 4))
-    ]
-    alphabet = list('ABCDEFGHIJ')
-    categorical_data = []
-
-    for dist_data in discrete_distributions:
-        shifted_data = dist_data - np.min(dist_data)
-        max_value = np.max(shifted_data)
-        categorical_columns = np.array([alphabet[i % len(alphabet)] for i in range(max_value + 1)])
-        categorical_data.append(categorical_columns[shifted_data])
-
-    return np.hstack(categorical_data)
+def generate_categorical_data(n_samples, n_cat):
+    data = [dist.rvs(size=n_samples, **params) for i in range(n_cat) for dist, params in
+            [distribution_dict[f'cat_{i + 1}']]]
+    return np.column_stack(data)
 
 
 def create_dataset(n_samples, n_cat, n_num):
-    continuous_data = generate_continuous_data(n_samples)
-    categorical_data = generate_categorical_data(n_samples)
+    continuous_data = generate_continuous_data(n_samples, n_num)
+    categorical_data = generate_categorical_data(n_samples, n_cat)
     data = np.hstack([continuous_data, categorical_data])
-    columns = [f'F{i + 1}' for i in range(n_num + n_cat)]
+    columns = [f'num_{i + 1}' for i in range(n_num)] + [f'cat_{i + 1}' for i in range(n_cat)]
     return pd.DataFrame(data, columns=columns)
 
 
-def preprocess_dataset(dataset, n_cat, n_num):
-    df = dataset.copy()
-    category_columns = [f'F{i + n_cat}' for i in range(1, n_cat + 1)]
-    numerical_columns = [f'F{i}' for i in range(1, n_num + 1)]
-
-    ordinal_encoder = OrdinalEncoder()
-    df[category_columns] = ordinal_encoder.fit_transform(df[category_columns])
-    df[numerical_columns] = df[numerical_columns].astype('float64')
-
-    return df, category_columns, numerical_columns
+def int_to_letter(n):
+    alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    quot, rem = divmod(n, len(alphabet))
+    return alphabet[rem] * (quot + 1)
 
 
-def updated_generate_target_variable(df, numerical_columns, category_columns):
-    # Apply simpler transformations to numerical features
-    transformed_num_features = np.hstack([
-        df[numerical_columns[:4]].values,
-        df[numerical_columns[4:8]].values,
-        df[numerical_columns[8:12]].values,
-        df[numerical_columns[12:16]].values,
-        df[numerical_columns[16:20]].values
-    ])
-
-    # Create interactions between a smaller number of selected features (pairwise interactions)
-    selected_interactions = [
-        (numerical_columns[0], category_columns[0]),
-        (numerical_columns[4], category_columns[4]),
-        (numerical_columns[8], category_columns[8]),
-        (numerical_columns[12], category_columns[12]),
-        (numerical_columns[16], category_columns[16]),
-    ]
-
-    interaction_features = np.zeros((n_samples, len(selected_interactions)))
-
-    for i, (num_col, cat_col) in enumerate(selected_interactions):
-        interaction_features[:, i] = df[num_col] * df[cat_col]
-
-    # Add interactions between numerical variables from different distributions
-    numerical_interactions = np.zeros((n_samples, 5))
-
-    for i in range(5):
-        numerical_interactions[:, i] = df[numerical_columns[i]] * df[numerical_columns[i + 4]]
-
-    # Add interactions between numerical variables from different distributions
-    categorical_interactions = np.zeros((n_samples, 5))
-
-    for i in range(5):
-        categorical_interactions[:, i] = df[category_columns[i]] * df[category_columns[i + 4]]
-
-    # Combine transformed numerical features, selected interactions, and numerical interactions
-    X_transformed = np.hstack(
-        [transformed_num_features, interaction_features, numerical_interactions, categorical_interactions])
-
-    # Generate the target variable Y as a simple linear combination of the transformed features
-    Y = np.sum(X_transformed, axis=1)
-    Y = np.sqrt(Y)
-    df['Y'] = Y
-
-    return df
+def letter_to_int(letter):
+    alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    number = 0
+    for char in letter:
+        number = 26 * number + (alphabet.index(char) + 1)
+    return number - 1
 
 
-def generate_target_variable(df, numerical_columns, category_columns):
-    transformed_num_features = np.hstack([
-        np.sqrt(df[numerical_columns[:4]].values),
-        np.log1p(df[numerical_columns[4:8]].values),
-        np.power(df[numerical_columns[8:12]].values, 0.5),
-        df[numerical_columns[12:16]].values,
-        df[numerical_columns[16:20]].values
-    ])
+def set_categorical_labels(dataset):
+    # Columns for the categorical variables
+    category_columns = [f'cat_{i}' for i in range(1, n_cat + 1)]
 
-    interaction_features = np.zeros((n_samples, 2 * (n_num + n_cat)))
+    for col in category_columns:
+        dataset[col] = dataset[col].apply(lambda x: int_to_letter(int(x)))
 
-    # Interactions between numerical and categorical features
-    for i, num_col in enumerate(numerical_columns):
-        interaction_features[:, i] = df[num_col] * df[category_columns[i % n_cat]]
+    return dataset
 
-    for i, cat_col in enumerate(category_columns):
-        interaction_features[:, n_num + i] = df[cat_col] * df[numerical_columns[i % n_num]]
 
-    # Interactions between numerical features
-    for i, num_col1 in enumerate(numerical_columns[:4]):
-        num_col2 = numerical_columns[i + 4]
-        interaction_features[:, 2 * n_num + i] = df[num_col1] * df[num_col2]
+def set_numerical_labels(dataset):
+    # Columns for the categorical variables
+    category_columns = [f'cat_{i}' for i in range(1, n_cat + 1)]
 
-    # Interactions between categorical features
-    for i, cat_col1 in enumerate(category_columns[:4]):
-        cat_col2 = category_columns[i + 4]
-        interaction_features[:, 2 * (n_num + n_cat) - 4 + i] = df[cat_col1] * df[cat_col2]
+    # Replace the values in the categorical columns
+    for col in category_columns:
+        dataset[col] = dataset[col].apply(lambda x: letter_to_int(x))
 
-    X_transformed = np.hstack([transformed_num_features, interaction_features])
-    Y = np.sum(X_transformed, axis=1)
-    df['Y'] = Y
+    return dataset
 
-    return df
+
+def calculate_bin_width(data):
+    """Calculate the bin width for a histogram using the Freedman-Diaconis rule."""
+    num_data_points = len(data)
+    np.max(data) - np.min(data)
+    interquartile_range = iqr(data)
+    bin_width = 2 * interquartile_range / (num_data_points ** (1 / 3))
+
+    return bin_width
+
+
+def generate_target_variable(df):
+    # Generate the target using a complex, non-linear function of the features
+    Y = df['num_1']**2 + np.sin(df['num_2']) + df['num_3'] * df['num_4'] + np.exp(-df['num_5'])
+
+    # Introduce interactions between some of the categorical features as well
+    Y += df['cat_1'] * df['cat_2'] + df['cat_3']**2 * df['cat_4'] + np.sqrt(df['cat_5'])
+
+    # Finally, introduce interactions between some of the numerical and categorical features
+    Y += df['num_1'] * df['cat_1'] + df['num_2'] * df['cat_2']**2 + df['num_3'] * np.sqrt(df['cat_3']) + df['num_5']
+
+    return Y
 
 
 def scale_and_randomize(df):
@@ -149,15 +109,8 @@ def scale_and_randomize(df):
     return df
 
 
-def create_bins(df, n_bins):
-    bins = pd.cut(df['Y'], bins=n_bins)
-    y_counts = bins.value_counts().sort_index()
-    df_counts = pd.DataFrame({'bins': y_counts.index, 'counts': y_counts.values})
-    return df_counts
-
-
 def plot_histogram(df, n_bins):
-    plt.hist(df['Y'], bins=n_bins)
+    plt.hist(df['Y'], n_bins)
     plt.xlabel('Y values')
     plt.ylabel('Frequency')
     plt.title(f'Histogram of Y column with {n_bins} bins')
@@ -165,12 +118,14 @@ def plot_histogram(df, n_bins):
 
 
 dataset = create_dataset(n_samples, n_cat, n_num)
-df, category_columns, numerical_columns = preprocess_dataset(dataset, n_cat, n_num)
-df = updated_generate_target_variable(df, numerical_columns, category_columns)
-dataset['Y'] = df['Y']
+Y = generate_target_variable(dataset)
+dataset['Y'] = Y
 dataset = scale_and_randomize(dataset)
-df_counts = create_bins(dataset, 100)
-print(df_counts)
-plot_histogram(dataset, 10)
 
+# Plotting histogram
+bw = calculate_bin_width(Y)
+n_bins = int((max(Y) - min(Y)) / bw)
+plot_histogram(dataset, n_bins)
+
+# Saving the dataset to a CSV file
 dataset.to_csv('synthetic_dataset.csv', index=False)
